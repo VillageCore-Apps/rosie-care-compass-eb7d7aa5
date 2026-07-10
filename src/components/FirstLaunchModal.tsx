@@ -9,7 +9,6 @@ import {
   DialogOverlay
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { ElevenLabsWidget } from "@/lib/elevenlabsWidget";
 
 const FirstLaunchModal = () => {
   const location = useLocation();
@@ -43,7 +42,6 @@ const FirstLaunchModal = () => {
 
   return (
     <Dialog open={isOpen} onOpenChange={() => { }}>
-      {!isOpen && hasAgreed && <ElevenLabsWidget />}
       <DialogContent className="max-w-[340px] lg:max-w-[400px] rounded-lg">
         <DialogHeader>
           <DialogTitle className="text-center text-lg font-semibold">
