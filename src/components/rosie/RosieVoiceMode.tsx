@@ -34,6 +34,9 @@ const RosieVoiceMode = () => {
     isThinking,
   } = useRosie();
 
+  const closeVoiceModeRef = useRef(closeVoiceMode);
+  closeVoiceModeRef.current = closeVoiceMode;
+
   const [state, setState] = useState<VoiceState>('idle');
   const [transcript, setTranscript] = useState('');
   const [lastReply, setLastReply] = useState<RosieMessage | null>(null);
@@ -72,6 +75,13 @@ const RosieVoiceMode = () => {
       // Voice mode always speaks — that's the whole point of being here.
       const outcome = await speakMessage(result.message, true);
       if (stateRef.current !== 'speaking') return; // user interrupted
+      // If Rosie is pulling up a page, close the overlay once she's done
+      // speaking so the page she opened is actually visible.
+      if (result.reply.navigateTo) {
+        setVoiceState('idle');
+        closeVoiceModeRef.current();
+        return;
+      }
       if (outcome === 'completed' && !followUpUsedRef.current && recognitionSupported) {
         // One automatic follow-up listen so the conversation flows naturally.
         followUpUsedRef.current = true;

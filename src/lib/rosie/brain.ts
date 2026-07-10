@@ -123,7 +123,7 @@ const DESTINATIONS: Destination[] = [
 
 function buildSearchActions(
   results: NonNullable<Awaited<ReturnType<typeof searchContent>>>
-): { actions: RosieAction[]; summary: string[] } {
+): { actions: RosieAction[]; summary: string[]; primaryTo?: string } {
   const actions: RosieAction[] = [];
   const summary: string[] = [];
 
@@ -150,7 +150,8 @@ function buildSearchActions(
     summary.push(`the book "${book.title}"`);
   }
 
-  return { actions: actions.slice(0, 5), summary: summary.slice(0, 5) };
+  const trimmed = actions.slice(0, 5);
+  return { actions: trimmed, summary: summary.slice(0, 5), primaryTo: trimmed[0]?.to };
 }
 
 async function recommendChapters(intro: string): Promise<RosieReply> {
@@ -178,6 +179,167 @@ async function recommendChapters(intro: string): Promise<RosieReply> {
       actions: HOME_ACTIONS,
     };
   }
+}
+
+/**
+ * A curated caregiving knowledge base. Each entry gives Rosie a *specific*,
+ * non-generic answer to a common question, and a `locate` query she uses to
+ * find and open the matching page from the app's real content (Legal,
+ * Housing, Safety chapters and their topics). Ordered most-specific first so
+ * "living will" is answered before the broader "will/estate" entry.
+ */
+type Knowledge = {
+  id: string;
+  patterns: RegExp;
+  /** Query passed to searchContent to open the real page for this topic. */
+  locate: string;
+  /** The chat answer (markdown allowed). */
+  answer: string;
+  /** Simpler phrasing spoken aloud (defaults to `answer`). */
+  speech?: string;
+};
+
+const KNOWLEDGE: Knowledge[] = [
+  {
+    id: 'power-of-attorney',
+    patterns: /\bpower of attorney\b|\bpoa\b|\battorney[- ]in[- ]fact\b/,
+    locate: 'Power of Attorney',
+    answer:
+      "Being someone's power of attorney means you're legally allowed to act for them. There are two kinds you'll hear about: a **healthcare (medical) power of attorney** lets you make medical decisions when they can't speak for themselves, and a **financial power of attorney** lets you handle their money, bills, and property.\n\nA few things to know:\n- It must be signed **while your loved one still understands the document** — usually witnessed or notarized.\n- Keep certified copies to give to doctors, banks, and care facilities.\n- Rules vary by state, so having an elder-law attorney look it over is worth it.\n\nI'm opening our Legal section on Power of Attorney so you can see how other caregivers handled it.",
+    speech:
+      "Being someone's power of attorney means you're legally allowed to act for them. There are two kinds: a healthcare power of attorney for medical decisions, and a financial one for money and property. It has to be signed while your loved one still understands it, usually witnessed or notarized, and rules vary by state, so an elder-law attorney is worth it. I'm opening our Legal section on power of attorney for you.",
+  },
+  {
+    id: 'advance-directive',
+    patterns: /\b(advance directive|living will|end[- ]of[- ]life wishes|dnr|do not resuscitate)\b/,
+    locate: 'Advance Directive',
+    answer:
+      "An **advance directive** (a living will is one form of it) is a document where your loved one writes down the medical care they'd want — or not want — if they ever couldn't speak for themselves. It can cover things like resuscitation, breathing machines, and feeding tubes.\n\nIt's a gift to you as a caregiver, because it means the hardest decisions are guided by *their* wishes, not left on your shoulders alone. Give copies to their doctor and keep one where you can find it quickly. I'm opening that page for you now.",
+    speech:
+      "An advance directive, and a living will is one form of it, is where your loved one writes down the medical care they would or wouldn't want if they couldn't speak for themselves. It guides the hardest decisions by their wishes, not yours alone. Keep copies with their doctor and somewhere easy to reach. I'm opening that page for you.",
+  },
+  {
+    id: 'polst',
+    patterns: /\bpolst\b|physician orders? for life/,
+    locate: 'POLST',
+    answer:
+      "A **POLST** (Physician Orders for Life-Sustaining Treatment) is a medical order signed by a doctor that turns your loved one's wishes into instructions emergency responders and hospitals must follow. It's meant for people who are seriously ill or frail — more immediate than an advance directive. Keep it visible (many families post it on the fridge) so it's found in an emergency. I'm pulling up that page for you.",
+  },
+  {
+    id: 'hipaa',
+    patterns: /\bhipaa\b|medical (records|privacy|information)|access (to )?(their )?(medical|health) (records|info)/,
+    locate: 'HIPAA',
+    answer:
+      "**HIPAA** is the privacy law that keeps medical information protected — which sometimes means doctors won't share details with you even though you're the caregiver. The fix is simple: have your loved one sign a **HIPAA authorization** naming you, so providers can talk to you freely. It's separate from a power of attorney, and most clinics have a one-page form. I'm opening our page on it.",
+  },
+  {
+    id: 'guardianship',
+    patterns: /\b(guardianship|conservator(ship)?|declared incompetent|incompeten|competen|court.*(control|decisions))\b/,
+    locate: 'Declared Incompetent',
+    answer:
+      "**Guardianship** (sometimes called conservatorship) is when a court appoints someone to make decisions for a person who can no longer make them safely. It usually only comes up when there's *no* power of attorney already in place, because it's a slower, court-supervised process. If your loved one can still sign documents, setting up powers of attorney now is almost always easier than guardianship later. I'm opening our page on being declared incompetent.",
+  },
+  {
+    id: 'estate-will',
+    patterns: /\b(last will|will and testament|estate plan|estate|probate|inherit|beneficiar)\w*\b/,
+    locate: 'Last Will and Testament',
+    answer:
+      "A **last will and testament** spells out how your loved one wants their belongings and money handled after they pass, and who should carry it out (the executor). It's different from a living will, which is about medical care while they're alive. Having it done — along with beneficiary designations kept up to date — spares the family confusion and conflict later. I'm opening our page on it.",
+  },
+  {
+    id: 'hospice',
+    patterns: /\bhospice\b|comfort care|terminal|end.stage/,
+    locate: 'Hospice',
+    answer:
+      "**Hospice** is comfort-focused care for someone whose illness is no longer being cured — the goal shifts to keeping them peaceful, out of pain, and surrounded by support. It's usually available when a doctor expects six months or less, it can happen at home, and it includes nurses, aides, and emotional and spiritual support for the *whole family*, including you. Choosing it isn't giving up — it's choosing comfort. I'm opening our Hospice page.",
+  },
+  {
+    id: 'respite',
+    patterns: /\b(respite|a break|time (off|for myself)|burn(ed|t)? ?out|need rest|can'?t keep|caregiver fatigue)\b/,
+    locate: 'Respite',
+    answer:
+      "What you're describing has a name: you need **respite** — planned time off from caregiving so you can rest and refill. It's not selfish; it's what keeps you able to keep caring. Respite can be a few hours from a friend, an adult day program, or a short facility stay that gives you a weekend. Please don't wait until you're completely empty. I'm opening our page on respite.",
+  },
+  {
+    id: 'falls',
+    patterns: /\b(falls?|falling|fell|trip(ped|ping)?|slip(ped|pery)?|unsteady|balance)\b/,
+    locate: 'Falls',
+    answer:
+      "Falls are one of the biggest worries in caregiving, and small changes prevent most of them: clear walkways and loose rugs, add grab bars in the bathroom, keep good lighting and a nightlight for bathroom trips, and have their footwear and medications reviewed (some cause dizziness). If a fall does happen, don't rush to lift them — check for pain first. I'm opening our Safety page on falls.",
+  },
+  {
+    id: 'driving',
+    patterns: /\b(driving|drive|car keys|take (away )?the keys|licen[sc]e|behind the wheel)\b/,
+    locate: 'Driving Privileges',
+    answer:
+      "Talking about giving up driving is one of the hardest conversations, because it's really about independence. Approach it as concern, not control — name specific things you've noticed, involve their doctor (a medical recommendation carries weight and takes you out of the 'bad guy' role), and offer a plan for how they'll still get where they need to go. I'm opening our page on driving privileges.",
+  },
+  {
+    id: 'medication',
+    patterns: /\b(medication|medicine|meds|pills|prescriptions?|pill (box|organizer)|forget(ting)? (to take|their)|dosage)\b/,
+    locate: 'Medicine',
+    answer:
+      "Managing medications gets overwhelming fast. What helps most: a weekly **pill organizer** (or a pharmacy that pre-sorts doses into dated packets), one up-to-date list of everything they take including supplements, and a simple routine tied to meals. Ask the pharmacist to review the full list for interactions — they'll do it for free. I'm opening our page on medicine management.",
+  },
+  {
+    id: 'money-matters',
+    patterns: /\b(money|finances?|bills?|paying for care|afford|cost of care|budget|savings)\b/,
+    locate: 'Money Matters',
+    answer:
+      "Money is one of the heaviest parts of caregiving, and you don't have to figure it out alone. Get the bills and accounts organized in one place, look into what they may qualify for (Medicaid, VA benefits, and long-term-care insurance are common ones people miss), and if you're handling their money, keep your spending separate and documented. I'm opening our page on money matters.",
+  },
+  {
+    id: 'assisted-living',
+    patterns: /\b(assisted living|nursing home|skilled nursing|pace program|care (home|facility)|placement)\b/,
+    locate: 'Assisted Living',
+    answer:
+      "Deciding on assisted living or a care facility is loaded with guilt for most caregivers — please be gentle with yourself. Assisted living suits someone who needs help with daily tasks but not constant medical care; skilled nursing is for higher medical needs. Visit more than once, at different times of day, and trust how the staff treat residents. I'm opening our page on assisted living.",
+  },
+  {
+    id: 'memory-care',
+    patterns: /\b(memory care|dementia|alzheimer|memory loss|confus(ed|ion)|wandering)\b/,
+    locate: 'Memory Care',
+    answer:
+      "Caring for someone with memory loss asks so much of you. A few things that help day to day: keep routines and surroundings familiar, don't argue with their reality — meet them where they are, and simplify choices. **Memory care** facilities are built specifically for this, with secured spaces and trained staff, when home becomes unsafe. I'm opening our page on memory care.",
+  },
+  {
+    id: 'incontinence',
+    patterns: /\b(incontinen|accidents?|diapers?|briefs?|bladder|bowel|toileting)\b/,
+    locate: 'Incontinence',
+    answer:
+      "Incontinence is common and nothing to be ashamed of — for either of you. Protect the dignity of the moment: keep supplies discreet and within reach, use a calm matter-of-fact tone, set gentle bathroom reminders on a schedule, and check the skin to prevent irritation. Ask the doctor too, since some causes are treatable. I'm opening our page on incontinence.",
+  },
+];
+
+function matchKnowledge(lower: string): Knowledge | null {
+  for (const entry of KNOWLEDGE) {
+    if (entry.patterns.test(lower)) return entry;
+  }
+  return null;
+}
+
+/**
+ * Runs a KB entry: gives its specific answer and opens the real page for it,
+ * resolved live from the app's content so links stay valid as content changes.
+ */
+async function answerFromKnowledge(entry: Knowledge): Promise<RosieReply> {
+  let actions: RosieAction[] = [];
+  let navigateTo: string | undefined;
+  try {
+    const results = await searchContent(entry.locate);
+    if (results) {
+      const built = buildSearchActions(results);
+      actions = built.actions;
+      navigateTo = built.primaryTo;
+    }
+  } catch {
+    // fall through to the resources fallback below
+  }
+  if (!navigateTo) {
+    actions = [{ label: 'Browse resources', to: '/resources' }];
+    navigateTo = '/resources';
+  }
+  return { text: entry.answer, speech: entry.speech ?? entry.answer, actions, navigateTo };
 }
 
 export async function getRosieReply(input: string): Promise<RosieReply> {
@@ -254,6 +416,14 @@ export async function getRosieReply(input: string): Promise<RosieReply> {
     };
   }
 
+  // Specific caregiving questions — answer substantively and open the real
+  // page for it. Checked before generic search so "power of attorney" gets a
+  // real explanation instead of a "here are some results" reply.
+  const knowledge = matchKnowledge(lower);
+  if (knowledge) {
+    return answerFromKnowledge(knowledge);
+  }
+
   // Recommendations / where to start
   if (/\b(recommend|suggest|where (do|should) i (start|begin)|what should i (read|do|try)|new here|first time|get(ting)? started)\b/.test(lower)) {
     return recommendChapters("I'd love to help you find a starting place.");
@@ -298,12 +468,15 @@ export async function getRosieReply(input: string): Promise<RosieReply> {
         }
       }
       if (results) {
-        const { actions, summary } = buildSearchActions(results);
+        const { actions, summary, primaryTo } = buildSearchActions(results);
         if (actions.length) {
+          const lead = summary[0];
           return {
-            text: `I found a few things that might help — ${summary.join(', ')}. Tap anything below to open it.`,
-            speech: `I found a few things that might help, including ${summary[0]}. Tap anything on screen to open it.`,
+            text: `Here's what I found on that — I'm opening ${lead} for you now. There's more below if you'd like to explore.`,
+            speech: `Here's what I found on that. I'm opening ${lead} for you now, and there's more on screen if you'd like to explore.`,
             actions,
+            // Pull up the most relevant page right away, as Rosie should.
+            navigateTo: primaryTo,
           };
         }
       }
