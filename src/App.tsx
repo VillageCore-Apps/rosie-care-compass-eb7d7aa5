@@ -20,6 +20,9 @@ import FlashcardsByChapter from "./pages/FlashcardsByChapter";
 import { TextSettingsProvider, useTextSettings } from './context/TextSettingsContext';
 import TextAdjuster from "./components/textAdjuster";
 import Layout from "./Layout";
+import { RosieProvider } from "./context/RosieContext";
+import RosieCompanion from "./components/rosie/RosieCompanion";
+import RosieVoiceMode from "./components/rosie/RosieVoiceMode";
 
 const queryClient = new QueryClient();
 const App = () => (
@@ -29,10 +32,13 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
-          <Layout>
-            <TextAdjuster />
-            <FirstLaunchModal />
-            <Routes>
+          <RosieProvider>
+            <Layout>
+              <TextAdjuster />
+              <FirstLaunchModal />
+              <RosieCompanion />
+              <RosieVoiceMode />
+              <Routes>
 
               <Route path="/" element={<Index />} />
               <Route path="/chapters" element={<Chapters />} />
@@ -46,10 +52,11 @@ const App = () => (
               <Route path="/acceptable-use-policy" element={<AcceptableUsePolicy />} />
               <Route path="/flashcards" element={<Flashcards />} />
               <Route path="/flashcards/:chapterId" element={<FlashcardsByChapter />} />
-              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </Layout>
+                {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </Layout>
+          </RosieProvider>
         </BrowserRouter>
       </TooltipProvider>
     </QueryClientProvider>

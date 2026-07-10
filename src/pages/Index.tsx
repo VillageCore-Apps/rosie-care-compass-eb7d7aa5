@@ -7,7 +7,6 @@ import OfficialBookSection from "@/components/OfficialBookSection";
 import MusicSection from "@/components/MusicSection";
 import { searchContent } from "@/lib/searchContent";
 import { Link } from "react-router-dom";
-import { Typewriter } from "react-simple-typewriter";
 import Submit from "@/components/Submit";
 import { IndexSkeleton } from "@/components/ui/skeletons";
 import { useTextSettings } from "@/context/TextSettingsContext";
@@ -328,50 +327,8 @@ const Index = () => {
           </div>
         </div>
       )}
-      {/* Hero Section with Profile Picture */}
-      <section className="relative py-4 z-10 animate-fade-in duration-500">
-        <div className="text-center">
-          {/* Profile Card */}
-          <div className="relative bg-[url('/blue-rosie.png')] bg-cover bg-center rounded-3xl shadow-xl">
-            {/* Frosted glass overlay */}
-            <div className="absolute inset-0 bg-white/60 backdrop-blur-2xl rounded-3xl pointer-events-none" />
-            {/* Bottom white overlay */}
-            <div className="absolute bottom-0 h-[75%] w-full bg-white/70 rounded-b-3xl" />
-
-            {/* Foreground content */}
-            <div className="relative p-6">
-              {/* Avatar */}
-              <div className="mb-4">
-                <div className="w-24 h-24 rounded-full mx-auto border-4 border-[#e4e8e1] shadow-lg flex items-center justify-center overflow-hidden">
-                  <img
-                    src="/blue-rosie.png"
-                    alt="Rosie Care Bot"
-                    className="w-full h-full object-cover rounded-full"
-                  />
-                </div>
-              </div>
-              {/* Text content */}
-              <h2 className="text-2xl font-black text-[#232323] mb-2 text-center">
-                Welcome to Your Journey with Rosie!
-              </h2>
-              <p className="text-[#373618] mb-4 text-base leading-relaxed text-center">
-                <Typewriter
-                  words={['I\'m Rosie, your AI guide for caregiving!',
-                    '',
-                    'Let\'s navigate this path together with stories, wisdom, and resources!']}
-                  cursor
-                  cursorStyle="_"
-                  typeSpeed={50}
-                  deleteSpeed={50}
-                  delaySpeed={1500}
-                />
-              </p>
-            </div>
-          </div>
-
-        </div>
-
-      </section>
+      {/* Rosie now greets from the companion bar at the top of the app,
+          so the old static hero card was retired. */}
 
       {/* Enhanced Creative Stories Section */}
       <div className="animate-slide-up">
