@@ -15,6 +15,8 @@ import PrivacyPolicy from "./pages/PrivacyPolicy";
 import TermsOfService from "./pages/TermsOfService";
 import AcceptableUsePolicy from "./pages/AcceptableUsePolicy";
 import FirstLaunchModal from "./components/FirstLaunchModal";
+import EmailGateModal from "./components/EmailGateModal";
+import Admin from "./pages/Admin";
 import Flashcards from "./pages/Flashcards";
 import FlashcardsByChapter from "./pages/FlashcardsByChapter";
 import { TextSettingsProvider, useTextSettings } from './context/TextSettingsContext';
@@ -46,6 +48,7 @@ const AppRoutes = () => {
       <Route path="/acceptable-use-policy" element={<AcceptableUsePolicy />} />
       <Route path="/flashcards" element={<Flashcards />} />
       <Route path="/flashcards/:chapterId" element={<FlashcardsByChapter />} />
+      <Route path="/admin" element={<Admin />} />
       {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
       <Route path="*" element={<NotFound />} />
     </Routes>
@@ -63,6 +66,7 @@ const App = () => (
             <Layout>
               <TextAdjuster />
               <FirstLaunchModal />
+              <EmailGateModal />
               <RosieCompanion />
               <RosieVoiceMode />
               <AppRoutes />
