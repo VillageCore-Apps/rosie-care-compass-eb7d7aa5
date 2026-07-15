@@ -233,7 +233,7 @@ const RosieCompanion = () => {
             {voiceEnabled ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
           </button>
           <button
-            onClick={openVoiceMode}
+            onClick={() => openVoiceMode()}
             aria-label="Talk to Rosie"
             title="Talk to Rosie"
             className="p-2.5 rounded-full bg-gradient-to-br from-[#4D9CFF] to-[#3a7fd6] text-white shadow-md transition active:scale-95"

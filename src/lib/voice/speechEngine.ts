@@ -1,4 +1,14 @@
-import { supabase } from '@/lib/supabase/supabaseClient';
+import { createClient } from '@supabase/supabase-js';
+
+/**
+ * Rosie's voice function lives in the VillageCore-owned Supabase project
+ * (joshuav-villagecore's Project), separate from the content database the
+ * rest of the app reads. This client is only used to invoke it.
+ */
+const ttsClient = createClient(
+  'https://dvhijzvaslvgihiikprd.supabase.co',
+  'sb_publishable_2zcZgT_3M7kWoKI_H_dvAw_2E_c34vi'
+);
 
 /**
  * Centralized voice service for Rosie.
@@ -163,7 +173,7 @@ class SpeechEngine {
       return cached;
     }
     try {
-      const { data, error } = await supabase.functions.invoke(TTS_FUNCTION, {
+      const { data, error } = await ttsClient.functions.invoke(TTS_FUNCTION, {
         body: { text },
       });
       if (error || !(data instanceof Blob) || data.size === 0) {
