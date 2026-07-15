@@ -43,7 +43,15 @@ type RosieContextType = {
   stopSpeaking: () => void;
   clearConversation: () => void;
   voiceModeOpen: boolean;
-  openVoiceMode: () => void;
+  /** True when the overlay should start listening as soon as it opens. */
+  voiceModeAutoListen: boolean;
+  /**
+   * Open the voice overlay. `listen: false` opens it resting ("tap anywhere
+   * to talk") — used when the app opens it on the user's behalf, where
+   * starting the microphone uninvited would be intrusive and, on mobile,
+   * rejected for lack of a tap gesture.
+   */
+  openVoiceMode: (opts?: { listen?: boolean }) => void;
   closeVoiceMode: () => void;
 };
 
@@ -174,7 +182,11 @@ export const RosieProvider = ({ children }: { children: ReactNode }) => {
     setMessages([greetingMessage()]);
   }, []);
 
-  const openVoiceMode = useCallback(() => setVoiceModeOpen(true), []);
+  const [voiceModeAutoListen, setVoiceModeAutoListen] = useState(true);
+  const openVoiceMode = useCallback((opts?: { listen?: boolean }) => {
+    setVoiceModeAutoListen(opts?.listen ?? true);
+    setVoiceModeOpen(true);
+  }, []);
   const closeVoiceMode = useCallback(() => {
     speechEngine.stop();
     setVoiceModeOpen(false);
@@ -193,6 +205,7 @@ export const RosieProvider = ({ children }: { children: ReactNode }) => {
         stopSpeaking,
         clearConversation,
         voiceModeOpen,
+        voiceModeAutoListen,
         openVoiceMode,
         closeVoiceMode,
       }}

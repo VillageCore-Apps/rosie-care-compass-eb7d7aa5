@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Mic, Send, X } from 'lucide-react';
 import { useRosie, RosieMessage } from '@/context/RosieContext';
 import {
   createRecognizer,
   isSpeechRecognitionSupported,
+  checkMicrophonePermission,
+  requestMicrophoneAccess,
   Recognizer,
 } from '@/lib/voice/recognition';
 
@@ -24,9 +27,28 @@ const STATE_CAPTIONS: Record<VoiceState, string> = {
   speaking: 'Tap to interrupt me',
 };
 
+/** Specific, actionable guidance for each way the microphone can fail. */
+const MIC_HINTS = {
+  blocked:
+    'Microphone access is blocked for this site. Tap the lock (or “aA”) icon near the address bar and allow the microphone — or simply type below.',
+  askAgain:
+    'Tap anywhere, then choose “Allow” when your browser asks to use the microphone.',
+  dictationOff:
+    "Your device's dictation service is turned off (on iPhone: Settings → General → Keyboard → Enable Dictation). You can type below instead.",
+  noMic:
+    "I couldn't find a working microphone on this device — you can type below instead.",
+  network:
+    'Voice input needs an internet connection right now — you can also type below.',
+  unheard: "I couldn't quite hear that — tap to try again.",
+  unsupported:
+    "Voice input isn't supported in this browser, but you can type below and I'll still speak my answers.",
+};
+
 const RosieVoiceMode = () => {
   const {
     voiceModeOpen,
+    voiceModeAutoListen,
+    openVoiceMode,
     closeVoiceMode,
     sendMessage,
     speakMessage,
@@ -85,7 +107,7 @@ const RosieVoiceMode = () => {
       if (outcome === 'completed' && !followUpUsedRef.current && recognitionSupported) {
         // One automatic follow-up listen so the conversation flows naturally.
         followUpUsedRef.current = true;
-        startListening(false);
+        void startListening(false);
       } else {
         setVoiceState('idle');
       }
@@ -94,44 +116,109 @@ const RosieVoiceMode = () => {
     [sendMessage, speakMessage, recognitionSupported]
   );
 
-  const startListening = useCallback(
-    (manual: boolean) => {
-      if (!recognitionSupported) return;
-      if (manual) followUpUsedRef.current = false;
-      stopRecognizer();
-      setTranscript('');
-      setHint(null);
-      gotFinalRef.current = false;
-      setVoiceState('listening');
+  const beginRecognition = useCallback(() => {
+    stopRecognizer();
+    setTranscript('');
+    setHint(null);
+    gotFinalRef.current = false;
+    setVoiceState('listening');
 
-      const recognizer = createRecognizer({
-        onInterim: (text) => setTranscript(text),
-        onFinal: (text) => {
-          gotFinalRef.current = true;
-          void handleUserInput(text);
-        },
-        onError: (error) => {
-          if (stateRef.current !== 'listening') return;
-          if (error === 'not-allowed' || error === 'service-not-allowed') {
-            setMicBlocked(true);
-            setHint('I need microphone permission to hear you. You can type below instead.');
-          } else if (error !== 'no-speech' && error !== 'aborted') {
-            setHint("I couldn't quite hear that — tap to try again.");
-          }
+    const recognizer = createRecognizer({
+      onInterim: (text) => setTranscript(text),
+      onFinal: (text) => {
+        gotFinalRef.current = true;
+        void handleUserInput(text);
+      },
+      onError: (error) => {
+        if (stateRef.current !== 'listening') return;
+        setVoiceState('idle');
+        if (error === 'not-allowed') {
+          // Denied for real, or just started outside a tap gesture?
+          // The Permissions API tells the two apart where available.
+          void checkMicrophonePermission().then((perm) => {
+            if (perm === 'denied') {
+              setMicBlocked(true);
+              setHint(MIC_HINTS.blocked);
+            } else {
+              setHint(MIC_HINTS.askAgain);
+            }
+          });
+        } else if (error === 'service-not-allowed') {
+          setHint(MIC_HINTS.dictationOff);
+        } else if (error === 'audio-capture') {
+          setHint(MIC_HINTS.noMic);
+        } else if (error === 'network') {
+          setHint(MIC_HINTS.network);
+        } else if (error !== 'no-speech' && error !== 'aborted') {
+          setHint(MIC_HINTS.unheard);
+        }
+      },
+      onEnd: () => {
+        // Mic session ended without a final result — return to idle calmly.
+        if (!gotFinalRef.current && stateRef.current === 'listening') {
           setVoiceState('idle');
-        },
-        onEnd: () => {
-          // Mic session ended without a final result — return to idle calmly.
-          if (!gotFinalRef.current && stateRef.current === 'listening') {
+        }
+      },
+    });
+    recognizerRef.current = recognizer;
+    recognizer?.start();
+  }, [stopRecognizer, handleUserInput, setVoiceState]);
+
+  const startListening = useCallback(
+    async (fromTap: boolean) => {
+      if (!recognitionSupported) return;
+      if (fromTap) {
+        followUpUsedRef.current = false;
+        // Mobile browsers only show the mic permission prompt during a real
+        // tap — ask here (via getUserMedia) so recognition can't be refused
+        // for lack of a gesture. Skipped once permission is granted.
+        const perm = await checkMicrophonePermission();
+        if (perm === 'denied') {
+          setMicBlocked(true);
+          setHint(MIC_HINTS.blocked);
+          setVoiceState('idle');
+          return;
+        }
+        if (perm === 'prompt' || perm === 'unknown') {
+          const result = await requestMicrophoneAccess();
+          if (result === 'denied') {
+            setMicBlocked(true);
+            setHint(MIC_HINTS.blocked);
             setVoiceState('idle');
+            return;
           }
-        },
-      });
-      recognizerRef.current = recognizer;
-      recognizer?.start();
+          if (result === 'unavailable') {
+            setHint(MIC_HINTS.noMic);
+            setVoiceState('idle');
+            return;
+          }
+          setMicBlocked(false);
+        }
+      }
+      beginRecognition();
     },
-    [recognitionSupported, stopRecognizer, handleUserInput, setVoiceState]
+    [recognitionSupported, beginRecognition, setVoiceState]
   );
+
+  // Welcome screen: when someone enters the site, greet them with the voice
+  // overlay resting in its "tap anywhere to talk to me" state (no microphone
+  // activity until they tap). This is the landing page; the "Welcome to Our
+  // App" terms dialog layers on top of it (see FirstLaunchModal's z-index).
+  // Runs once per page load, and stays out of the way on the policy pages the
+  // terms dialog links to.
+  const location = useLocation();
+  const autoOpenedRef = useRef(false);
+  useEffect(() => {
+    if (autoOpenedRef.current) return;
+    const policyPages = [
+      '/privacy-policy',
+      '/terms-of-service',
+      '/acceptable-use-policy',
+    ];
+    if (policyPages.includes(location.pathname)) return;
+    autoOpenedRef.current = true;
+    openVoiceMode({ listen: false });
+  }, [location.pathname, openVoiceMode]);
 
   // Opening the overlay is itself a tap, so we can begin listening right away.
   useEffect(() => {
@@ -140,10 +227,15 @@ const RosieVoiceMode = () => {
       setLastReply(null);
       setTranscript('');
       setHint(null);
-      if (recognitionSupported) {
-        startListening(true);
+      if (recognitionSupported && voiceModeAutoListen) {
+        // Opening the overlay may or may not still count as a tap gesture,
+        // so this first attempt makes no permission requests of its own;
+        // a real tap (handleTap) handles prompting properly.
+        void startListening(false);
       } else {
-        setHint("Voice input isn't supported in this browser, but you can type below and I'll still speak my answers.");
+        // Opened as the site's welcome screen (or voice unsupported):
+        // rest calmly until the user taps.
+        if (!recognitionSupported) setHint(MIC_HINTS.unsupported);
         setVoiceState('idle');
       }
     } else {
@@ -159,13 +251,14 @@ const RosieVoiceMode = () => {
   const handleTap = () => {
     if (stateRef.current === 'speaking') {
       stopSpeaking();
-      if (recognitionSupported) startListening(true);
+      if (recognitionSupported) void startListening(true);
       else setVoiceState('idle');
     } else if (stateRef.current === 'listening') {
       // Stop the mic; if something was heard, onFinal will take over.
       recognizerRef.current?.stop();
     } else if (stateRef.current === 'idle') {
-      startListening(true);
+      if (recognitionSupported) void startListening(true);
+      else setHint(MIC_HINTS.unsupported);
     }
     // 'thinking' taps are ignored — Rosie is almost done anyway.
   };
@@ -286,33 +379,29 @@ const RosieVoiceMode = () => {
         </div>
       </div>
 
-      {/* Bottom area */}
+      {/* Bottom area — typing is always available, whatever the mic does. */}
       <div className="w-full max-w-md px-6 pb-10" onClick={(e) => e.stopPropagation()}>
-        {(!recognitionSupported || micBlocked) && (
-          <form onSubmit={handleTypedSubmit} className="flex items-center gap-2">
-            <input
-              type="text"
-              value={typedDraft}
-              onChange={(e) => setTypedDraft(e.target.value)}
-              placeholder="Type to Rosie…"
-              aria-label="Type a message to Rosie"
-              className="flex-1 min-w-0 px-4 py-3 rounded-full bg-white/10 border border-white/25 text-white placeholder-white/50 text-base focus:outline-none focus:ring-2 focus:ring-[#9CE6E6]/60"
-            />
-            <button
-              type="submit"
-              disabled={!typedDraft.trim()}
-              aria-label="Send"
-              className="p-3 rounded-full bg-[#4D9CFF] text-white disabled:opacity-40 transition active:scale-95"
-            >
-              <Send className="h-5 w-5" />
-            </button>
-          </form>
-        )}
-        {recognitionSupported && !micBlocked && (
-          <p className="text-center text-sm text-white/50">
-            Your conversation is saved in the chat, so you can pick up where you left off.
-          </p>
-        )}
+        <form onSubmit={handleTypedSubmit} className="flex items-center gap-2">
+          <input
+            type="text"
+            value={typedDraft}
+            onChange={(e) => setTypedDraft(e.target.value)}
+            placeholder={recognitionSupported && !micBlocked ? 'Or type to Rosie…' : 'Type to Rosie…'}
+            aria-label="Type a message to Rosie"
+            className="flex-1 min-w-0 px-4 py-3 rounded-full bg-white/10 border border-white/25 text-white placeholder-white/50 text-base focus:outline-none focus:ring-2 focus:ring-[#9CE6E6]/60"
+          />
+          <button
+            type="submit"
+            disabled={!typedDraft.trim()}
+            aria-label="Send"
+            className="p-3 rounded-full bg-[#4D9CFF] text-white disabled:opacity-40 transition active:scale-95"
+          >
+            <Send className="h-5 w-5" />
+          </button>
+        </form>
+        <p className="mt-3 text-center text-sm text-white/50">
+          Your conversation is saved in the chat, so you can pick up where you left off.
+        </p>
       </div>
     </div>
   );
