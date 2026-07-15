@@ -1,14 +1,18 @@
-import { createClient } from '@supabase/supabase-js';
-
 /**
  * Rosie's voice function lives in the VillageCore-owned Supabase project
  * (joshuav-villagecore's Project), separate from the content database the
- * rest of the app reads. This client is only used to invoke it.
+ * rest of the app reads.
+ *
+ * We call it with a plain fetch rather than supabase-js `functions.invoke`
+ * on purpose: invoke() sniffs the response Content-Type and decodes our
+ * `audio/mpeg` body as *text*, so `data` came back as a string and never
+ * satisfied the `instanceof Blob` check — the app then silently fell back
+ * to the robotic browser voice every time. Reading the response as a blob
+ * ourselves keeps the real MP3 intact.
  */
-const ttsClient = createClient(
-  'https://dvhijzvaslvgihiikprd.supabase.co',
-  'sb_publishable_2zcZgT_3M7kWoKI_H_dvAw_2E_c34vi'
-);
+const TTS_ENDPOINT =
+  'https://dvhijzvaslvgihiikprd.supabase.co/functions/v1/elevenlabs-tts';
+const TTS_PUBLISHABLE_KEY = 'sb_publishable_2zcZgT_3M7kWoKI_H_dvAw_2E_c34vi';
 
 /**
  * Centralized voice service for Rosie.
@@ -46,7 +50,7 @@ type Listener = (status: SpeechStatus) => void;
 
 const VOICE_PREF_KEY = 'rosie-voice-enabled';
 const MAX_CACHE_ENTRIES = 40;
-const TTS_FUNCTION = 'elevenlabs-tts';
+const ELEVENLABS_RETRY_DELAY_MS = 30_000;
 
 /** Strip markdown, emoji and layout noise so text reads naturally aloud. */
 export function sanitizeForSpeech(text: string): string {
@@ -54,7 +58,8 @@ export function sanitizeForSpeech(text: string): string {
     .replace(/!\[[^\]]*\]\([^)]*\)/g, '') // images
     .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1') // links -> label
     .replace(/[*_#`>~]/g, '')
-    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, '')
+    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '')
+    .replace(/\u{FE0F}/gu, '') // emoji variation selector
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -68,8 +73,8 @@ class SpeechEngine {
   private resolveActive: ((result: SpeakResult) => void) | null = null;
   /** Session cache: sanitized text -> object URL of generated audio. */
   private cache = new Map<string, string>();
-  /** null = not yet tried, false = failed this session (skip until reload). */
-  private elevenLabsHealthy: boolean | null = null;
+  /** Time of the last failed request; retries are allowed after a short pause. */
+  private elevenLabsFailedAt: number | null = null;
   private voices: SpeechSynthesisVoice[] = [];
 
   constructor() {
@@ -125,7 +130,10 @@ class SpeechEngine {
     const uid = opts.utteranceId ?? null;
     this.emit('loading', uid);
 
-    if (this.elevenLabsHealthy !== false) {
+    const canTryElevenLabs =
+      this.elevenLabsFailedAt === null ||
+      Date.now() - this.elevenLabsFailedAt >= ELEVENLABS_RETRY_DELAY_MS;
+    if (canTryElevenLabs) {
       const url = await this.fetchElevenLabsAudio(clean);
       if (this.token !== myToken) return 'interrupted';
       if (url) return this.playAudio(url, clean, myToken, uid);
@@ -173,14 +181,21 @@ class SpeechEngine {
       return cached;
     }
     try {
-      const { data, error } = await ttsClient.functions.invoke(TTS_FUNCTION, {
-        body: { text },
+      const response = await fetch(TTS_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${TTS_PUBLISHABLE_KEY}`,
+          apikey: TTS_PUBLISHABLE_KEY,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ text }),
       });
-      if (error || !(data instanceof Blob) || data.size === 0) {
-        this.elevenLabsHealthy = false;
+      const data = response.ok ? await response.blob() : null;
+      if (!data || !data.type.startsWith('audio') || data.size === 0) {
+        this.elevenLabsFailedAt = Date.now();
         return null;
       }
-      this.elevenLabsHealthy = true;
+      this.elevenLabsFailedAt = null;
       const url = URL.createObjectURL(data);
       this.cache.set(text, url);
       while (this.cache.size > MAX_CACHE_ENTRIES) {
@@ -191,7 +206,7 @@ class SpeechEngine {
       }
       return url;
     } catch {
-      this.elevenLabsHealthy = false;
+      this.elevenLabsFailedAt = Date.now();
       return null;
     }
   }
