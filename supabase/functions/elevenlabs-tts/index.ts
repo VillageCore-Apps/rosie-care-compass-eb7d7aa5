@@ -18,7 +18,7 @@ const corsHeaders = {
 
 // "Elise – Warm, Natural and Engaging" — the voice paired with the Eva
 // avatar. (Override without redeploying via the ELEVENLABS_VOICE_ID secret.)
-const DEFAULT_VOICE_ID = 'EST9Ui6982FZPSi7gCHi';
+const DEFAULT_VOICE_ID = 'Ng8oJ3Hj1kURqJwllJll';
 const MAX_TEXT_LENGTH = 1200;
 
 function jsonError(message: string, status: number): Response {
